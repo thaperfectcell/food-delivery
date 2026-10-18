@@ -1,0 +1,17 @@
+# Go
+*.exe
+*.test
+*.out
+/bin/
+vendor/
+
+# Окружение и секреты
+.env
+
+# IDE и система
+.idea/
+.vscode/
+.DS_Store
+
+# Локальные данные docker
+/data/
