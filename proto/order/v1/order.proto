@@ -1,0 +1,127 @@
+syntax = "proto3";
+
+// Сервис заказов (Order Service): оформление заказа и его жизненный цикл.
+package order.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/thaperfectcell/food-delivery/gen/order/v1;orderv1";
+
+// Статусы заказа (конечный автомат описан в docs/architecture.md).
+enum OrderStatus {
+  ORDER_STATUS_UNSPECIFIED = 0;
+  ORDER_STATUS_CREATED = 1;     // создан, ожидает оплаты
+  ORDER_STATUS_PAID = 2;        // оплачен, ожидает подтверждения ресторана
+  ORDER_STATUS_ACCEPTED = 3;    // принят рестораном, готовится
+  ORDER_STATUS_READY = 4;       // готов, ожидает курьера
+  ORDER_STATUS_IN_DELIVERY = 5; // передан курьеру
+  ORDER_STATUS_DELIVERED = 6;   // доставлен
+  ORDER_STATUS_CANCELLED = 7;   // отменён
+}
+
+message OrderItem {
+  string menu_item_id = 1;
+  string name = 2;
+  int64 price = 3; // цена за единицу, копейки
+  int32 quantity = 4;
+  int64 total = 5; // price * quantity
+}
+
+message StatusChange {
+  OrderStatus status = 1;
+  string reason = 2;
+  google.protobuf.Timestamp at = 3;
+}
+
+message Order {
+  string id = 1;
+  string customer_id = 2;
+  string restaurant_id = 3;
+  string restaurant_name = 4;
+  string restaurant_address = 5;
+  repeated OrderItem items = 6;
+  int64 items_total = 7;
+  int64 delivery_fee = 8;
+  int64 total = 9;
+  OrderStatus status = 10;
+  string delivery_address = 11;
+  string comment = 12;
+  string courier_id = 13;
+  string courier_name = 14;
+  string cancel_reason = 15;
+  repeated StatusChange history = 16;
+  google.protobuf.Timestamp created_at = 17;
+  google.protobuf.Timestamp updated_at = 18;
+}
+
+service OrderService {
+  // Оформление заказа клиентом (идентификатор клиента берётся из метаданных x-actor-id).
+  rpc CreateOrder(CreateOrderRequest) returns (Order);
+  rpc GetOrder(GetOrderRequest) returns (Order);
+  rpc ListOrders(ListOrdersRequest) returns (ListOrdersResponse);
+  // Отмена клиентом (до принятия рестораном).
+  rpc CancelOrder(CancelOrderRequest) returns (Order);
+  // Действия ресторана.
+  rpc AcceptOrder(AcceptOrderRequest) returns (Order);
+  rpc RejectOrder(RejectOrderRequest) returns (Order);
+  rpc MarkOrderReady(MarkOrderReadyRequest) returns (Order);
+  // Агрегированная статистика (для администратора).
+  rpc GetStats(GetStatsRequest) returns (OrderStats);
+}
+
+message CreateOrderItem {
+  string menu_item_id = 1;
+  int32 quantity = 2;
+}
+
+message CreateOrderRequest {
+  string restaurant_id = 1;
+  repeated CreateOrderItem items = 2;
+  string delivery_address = 3;
+  string comment = 4;
+  string idempotency_key = 5; // защита от повторного создания при ретраях
+}
+
+message GetOrderRequest {
+  string id = 1;
+}
+
+message ListOrdersRequest {
+  string restaurant_id = 1;           // фильтр по ресторану (для роли restaurant/admin)
+  repeated OrderStatus statuses = 2;  // фильтр по статусам
+  int32 limit = 3;
+  int32 offset = 4;
+}
+
+message ListOrdersResponse {
+  repeated Order orders = 1;
+  int32 total = 2;
+}
+
+message CancelOrderRequest {
+  string id = 1;
+  string reason = 2;
+}
+
+message AcceptOrderRequest {
+  string id = 1;
+}
+
+message RejectOrderRequest {
+  string id = 1;
+  string reason = 2;
+}
+
+message MarkOrderReadyRequest {
+  string id = 1;
+}
+
+message GetStatsRequest {}
+
+message OrderStats {
+  int64 total_orders = 1;
+  map<string, int64> by_status = 2; // ключ — статус в нижнем регистре (created, paid, ...)
+  int64 revenue = 3;                // сумма доставленных заказов, копейки
+  int64 average_check = 4;          // средний чек доставленных заказов, копейки
+  int64 orders_today = 5;
+}

@@ -1,0 +1,48 @@
+syntax = "proto3";
+
+// Сервис платежей (Payment Service). Платежи проводятся асинхронно
+// по событию order.created; через gRPC доступно только чтение.
+package payment.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/thaperfectcell/food-delivery/gen/payment/v1;paymentv1";
+
+enum PaymentStatus {
+  PAYMENT_STATUS_UNSPECIFIED = 0;
+  PAYMENT_STATUS_PENDING = 1;
+  PAYMENT_STATUS_SUCCEEDED = 2;
+  PAYMENT_STATUS_FAILED = 3;
+  PAYMENT_STATUS_REFUNDED = 4;
+}
+
+message Payment {
+  string id = 1;
+  string order_id = 2;
+  string customer_id = 3;
+  int64 amount = 4; // копейки
+  PaymentStatus status = 5;
+  string failure_reason = 6;
+  string provider_ref = 7; // идентификатор транзакции у (эмулируемого) платёжного провайдера
+  google.protobuf.Timestamp created_at = 8;
+  google.protobuf.Timestamp updated_at = 9;
+}
+
+service PaymentService {
+  rpc GetPaymentByOrder(GetPaymentByOrderRequest) returns (Payment);
+  rpc ListPayments(ListPaymentsRequest) returns (ListPaymentsResponse);
+}
+
+message GetPaymentByOrderRequest {
+  string order_id = 1;
+}
+
+message ListPaymentsRequest {
+  int32 limit = 1;
+  int32 offset = 2;
+}
+
+message ListPaymentsResponse {
+  repeated Payment payments = 1;
+  int32 total = 2;
+}

@@ -1,0 +1,45 @@
+syntax = "proto3";
+
+// Сервис уведомлений (Notification Service): формирует уведомления по доменным
+// событиям, хранит историю и публикует их для доставки клиентам в реальном времени.
+package notification.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/thaperfectcell/food-delivery/gen/notification/v1;notificationv1";
+
+message Notification {
+  string id = 1;
+  string user_id = 2;
+  string type = 3; // тип исходного события, например order.accepted
+  string title = 4;
+  string body = 5;
+  string order_id = 6;
+  bool read = 7;
+  google.protobuf.Timestamp created_at = 8;
+}
+
+service NotificationService {
+  // Уведомления текущего пользователя (x-actor-id).
+  rpc ListNotifications(ListNotificationsRequest) returns (ListNotificationsResponse);
+  rpc MarkRead(MarkReadRequest) returns (MarkReadResponse);
+}
+
+message ListNotificationsRequest {
+  int32 limit = 1;
+  bool unread_only = 2;
+}
+
+message ListNotificationsResponse {
+  repeated Notification notifications = 1;
+  int32 unread_count = 2;
+}
+
+message MarkReadRequest {
+  repeated string ids = 1;
+  bool all = 2;
+}
+
+message MarkReadResponse {
+  int32 updated = 1;
+}

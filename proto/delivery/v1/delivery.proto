@@ -1,0 +1,97 @@
+syntax = "proto3";
+
+// Сервис доставки (Delivery Service): курьеры, назначение и выполнение доставок.
+package delivery.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/thaperfectcell/food-delivery/gen/delivery/v1;deliveryv1";
+
+enum CourierStatus {
+  COURIER_STATUS_UNSPECIFIED = 0;
+  COURIER_STATUS_OFFLINE = 1;   // не на смене
+  COURIER_STATUS_AVAILABLE = 2; // на смене, свободен
+  COURIER_STATUS_BUSY = 3;      // выполняет доставку
+}
+
+enum DeliveryStatus {
+  DELIVERY_STATUS_UNSPECIFIED = 0;
+  DELIVERY_STATUS_PENDING = 1;   // ожидает свободного курьера
+  DELIVERY_STATUS_ASSIGNED = 2;  // курьер назначен
+  DELIVERY_STATUS_PICKED_UP = 3; // курьер забрал заказ
+  DELIVERY_STATUS_DELIVERED = 4; // доставлено
+  DELIVERY_STATUS_CANCELLED = 5; // отменено
+}
+
+message Courier {
+  string id = 1;
+  string name = 2;
+  CourierStatus status = 3;
+  int32 completed_deliveries = 4;
+  google.protobuf.Timestamp status_changed_at = 5;
+}
+
+message Delivery {
+  string id = 1;
+  string order_id = 2;
+  string customer_id = 3;
+  string courier_id = 4;
+  string courier_name = 5;
+  DeliveryStatus status = 6;
+  string restaurant_name = 7;
+  string restaurant_address = 8;
+  string delivery_address = 9;
+  int64 order_total = 10;
+  bool order_ready = 11; // ресторан отметил заказ готовым
+  google.protobuf.Timestamp created_at = 12;
+  google.protobuf.Timestamp assigned_at = 13;
+  google.protobuf.Timestamp picked_up_at = 14;
+  google.protobuf.Timestamp delivered_at = 15;
+}
+
+service DeliveryService {
+  // Выход курьера на смену / уход со смены (курьер — из метаданных x-actor-id).
+  rpc SetCourierStatus(SetCourierStatusRequest) returns (Courier);
+  rpc GetCourier(GetCourierRequest) returns (Courier);
+  rpc ListCourierDeliveries(ListCourierDeliveriesRequest) returns (ListDeliveriesResponse);
+  rpc GetDeliveryByOrder(GetDeliveryByOrderRequest) returns (Delivery);
+  rpc PickUpDelivery(DeliveryActionRequest) returns (Delivery);
+  rpc CompleteDelivery(DeliveryActionRequest) returns (Delivery);
+  rpc GetStats(GetStatsRequest) returns (DeliveryStats);
+}
+
+message SetCourierStatusRequest {
+  bool online = 1;
+  string name = 2; // отображаемое имя курьера (передаётся шлюзом из профиля)
+}
+
+message GetCourierRequest {
+  string id = 1; // пусто — текущий курьер
+}
+
+message ListCourierDeliveriesRequest {
+  bool active_only = 1;
+  int32 limit = 2;
+}
+
+message ListDeliveriesResponse {
+  repeated Delivery deliveries = 1;
+}
+
+message GetDeliveryByOrderRequest {
+  string order_id = 1;
+}
+
+message DeliveryActionRequest {
+  string id = 1;
+}
+
+message GetStatsRequest {}
+
+message DeliveryStats {
+  int32 couriers_online = 1;
+  int32 couriers_busy = 2;
+  int32 deliveries_pending = 3;
+  int32 deliveries_active = 4;
+  int32 deliveries_completed = 5;
+}
