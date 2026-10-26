@@ -4,6 +4,7 @@
 *.out
 /bin/
 vendor/
+coverage.*
 
 # Окружение и секреты
 .env
