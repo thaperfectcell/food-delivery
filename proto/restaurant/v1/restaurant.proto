@@ -1,0 +1,124 @@
+syntax = "proto3";
+
+// Сервис каталога ресторанов и меню (Restaurant Service).
+package restaurant.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/thaperfectcell/food-delivery/gen/restaurant/v1;restaurantv1";
+
+message Restaurant {
+  string id = 1;
+  string owner_id = 2;
+  string name = 3;
+  string description = 4;
+  string address = 5;
+  string cuisine = 6;
+  bool is_active = 7;
+  google.protobuf.Timestamp created_at = 8;
+}
+
+message MenuItem {
+  string id = 1;
+  string restaurant_id = 2;
+  string name = 3;
+  string description = 4;
+  string category = 5;
+  int64 price = 6; // цена в копейках
+  bool is_available = 7;
+  google.protobuf.Timestamp created_at = 8;
+}
+
+service RestaurantService {
+  rpc CreateRestaurant(CreateRestaurantRequest) returns (Restaurant);
+  rpc UpdateRestaurant(UpdateRestaurantRequest) returns (Restaurant);
+  rpc GetRestaurant(GetRestaurantRequest) returns (Restaurant);
+  rpc ListRestaurants(ListRestaurantsRequest) returns (ListRestaurantsResponse);
+
+  rpc ListMenu(ListMenuRequest) returns (ListMenuResponse);
+  rpc CreateMenuItem(CreateMenuItemRequest) returns (MenuItem);
+  rpc UpdateMenuItem(UpdateMenuItemRequest) returns (MenuItem);
+  rpc DeleteMenuItem(DeleteMenuItemRequest) returns (DeleteMenuItemResponse);
+
+  // Используется Order Service: проверка существования, доступности
+  // и актуальных цен позиций при оформлении заказа.
+  rpc GetMenuItems(GetMenuItemsRequest) returns (GetMenuItemsResponse);
+}
+
+message CreateRestaurantRequest {
+  string name = 1;
+  string description = 2;
+  string address = 3;
+  string cuisine = 4;
+}
+
+message UpdateRestaurantRequest {
+  string id = 1;
+  optional string name = 2;
+  optional string description = 3;
+  optional string address = 4;
+  optional string cuisine = 5;
+  optional bool is_active = 6;
+}
+
+message GetRestaurantRequest {
+  string id = 1;
+}
+
+message ListRestaurantsRequest {
+  string owner_id = 1;        // фильтр по владельцу (пусто — все)
+  bool include_inactive = 2;  // учитывать неактивные рестораны
+  string cuisine = 3;
+  string query = 4;           // поиск по названию
+  int32 limit = 5;
+  int32 offset = 6;
+}
+
+message ListRestaurantsResponse {
+  repeated Restaurant restaurants = 1;
+  int32 total = 2;
+}
+
+message ListMenuRequest {
+  string restaurant_id = 1;
+  bool only_available = 2;
+}
+
+message ListMenuResponse {
+  repeated MenuItem items = 1;
+}
+
+message CreateMenuItemRequest {
+  string restaurant_id = 1;
+  string name = 2;
+  string description = 3;
+  string category = 4;
+  int64 price = 5;
+}
+
+message UpdateMenuItemRequest {
+  string id = 1;
+  string restaurant_id = 2;
+  optional string name = 3;
+  optional string description = 4;
+  optional string category = 5;
+  optional int64 price = 6;
+  optional bool is_available = 7;
+}
+
+message DeleteMenuItemRequest {
+  string id = 1;
+  string restaurant_id = 2;
+}
+
+message DeleteMenuItemResponse {}
+
+message GetMenuItemsRequest {
+  string restaurant_id = 1;
+  repeated string ids = 2;
+}
+
+message GetMenuItemsResponse {
+  Restaurant restaurant = 1;
+  repeated MenuItem items = 2;
+}

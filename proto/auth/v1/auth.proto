@@ -1,0 +1,72 @@
+syntax = "proto3";
+
+// Сервис аутентификации и управления пользователями (Auth Service).
+// Выдаёт JWT-токены доступа; API Gateway проверяет их локально по общему секрету.
+package auth.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/thaperfectcell/food-delivery/gen/auth/v1;authv1";
+
+// Роль пользователя в системе.
+enum Role {
+  ROLE_UNSPECIFIED = 0;
+  ROLE_CUSTOMER = 1;   // клиент
+  ROLE_RESTAURANT = 2; // сотрудник/владелец ресторана
+  ROLE_COURIER = 3;    // курьер
+  ROLE_ADMIN = 4;      // администратор платформы
+}
+
+message User {
+  string id = 1;
+  string email = 2;
+  string name = 3;
+  string phone = 4;
+  Role role = 5;
+  google.protobuf.Timestamp created_at = 6;
+}
+
+service AuthService {
+  // Регистрация нового пользователя (роль администратора через API недоступна).
+  rpc Register(RegisterRequest) returns (AuthResponse);
+  // Вход по email и паролю, выдача токена доступа.
+  rpc Login(LoginRequest) returns (AuthResponse);
+  // Профиль пользователя по идентификатору.
+  rpc GetUser(GetUserRequest) returns (User);
+  // Список пользователей (только для администратора).
+  rpc ListUsers(ListUsersRequest) returns (ListUsersResponse);
+}
+
+message RegisterRequest {
+  string email = 1;
+  string password = 2;
+  string name = 3;
+  string phone = 4;
+  Role role = 5;
+}
+
+message LoginRequest {
+  string email = 1;
+  string password = 2;
+}
+
+message AuthResponse {
+  User user = 1;
+  string access_token = 2;
+  google.protobuf.Timestamp expires_at = 3;
+}
+
+message GetUserRequest {
+  string id = 1;
+}
+
+message ListUsersRequest {
+  Role role = 1; // ROLE_UNSPECIFIED — все роли
+  int32 limit = 2;
+  int32 offset = 3;
+}
+
+message ListUsersResponse {
+  repeated User users = 1;
+  int32 total = 2;
+}
