@@ -1,0 +1,628 @@
+openapi: 3.0.3
+info:
+  title: FoodFlow API Gateway
+  version: 1.0.0
+  description: |
+    Внешний REST API системы управления заказами и доставкой еды.
+    API Gateway проверяет JWT, выполняет авторизацию по ролям и транслирует
+    запросы во внутренние микросервисы по gRPC.
+
+    * Все денежные величины — целые числа в **копейках**.
+    * Аутентификация — заголовок `Authorization: Bearer <token>`.
+    * Каждый ответ содержит заголовок `X-Request-ID` (сквозной идентификатор запроса).
+servers:
+  - url: http://localhost:8080/api/v1
+tags:
+  - name: auth
+    description: Регистрация и вход
+  - name: catalog
+    description: Рестораны и меню
+  - name: orders
+    description: Заказы
+  - name: courier
+    description: Работа курьера
+  - name: notifications
+    description: Уведомления
+  - name: admin
+    description: Администрирование
+
+paths:
+  /auth/register:
+    post:
+      tags: [auth]
+      summary: Регистрация пользователя
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RegisterRequest' }
+      responses:
+        '201': { description: Пользователь создан, content: { application/json: { schema: { $ref: '#/components/schemas/AuthResponse' } } } }
+        '400': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+  /auth/login:
+    post:
+      tags: [auth]
+      summary: Вход
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginRequest' }
+      responses:
+        '200': { description: Успешный вход, content: { application/json: { schema: { $ref: '#/components/schemas/AuthResponse' } } } }
+        '401': { $ref: '#/components/responses/Error' }
+  /auth/me:
+    get:
+      tags: [auth]
+      summary: Профиль текущего пользователя
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Профиль, content: { application/json: { schema: { $ref: '#/components/schemas/User' } } } }
+        '401': { $ref: '#/components/responses/Error' }
+
+  /restaurants:
+    get:
+      tags: [catalog]
+      summary: Каталог активных ресторанов
+      parameters:
+        - { name: q, in: query, schema: { type: string }, description: Поиск по названию }
+        - { name: cuisine, in: query, schema: { type: string } }
+        - { $ref: '#/components/parameters/Limit' }
+        - { $ref: '#/components/parameters/Offset' }
+      responses:
+        '200': { description: Список, content: { application/json: { schema: { $ref: '#/components/schemas/RestaurantList' } } } }
+    post:
+      tags: [catalog]
+      summary: Создать ресторан (роль restaurant)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RestaurantInput' }
+      responses:
+        '201': { description: Создан, content: { application/json: { schema: { $ref: '#/components/schemas/Restaurant' } } } }
+        '400': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+  /restaurants/{id}:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    get:
+      tags: [catalog]
+      summary: Ресторан
+      responses:
+        '200': { description: Ресторан, content: { application/json: { schema: { $ref: '#/components/schemas/Restaurant' } } } }
+        '404': { $ref: '#/components/responses/Error' }
+    patch:
+      tags: [catalog]
+      summary: Изменить ресторан (владелец)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RestaurantPatch' }
+      responses:
+        '200': { description: Обновлён, content: { application/json: { schema: { $ref: '#/components/schemas/Restaurant' } } } }
+        '403': { $ref: '#/components/responses/Error' }
+  /restaurants/{id}/menu:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    get:
+      tags: [catalog]
+      summary: Меню ресторана
+      parameters:
+        - { name: available, in: query, schema: { type: boolean }, description: Только доступные позиции }
+      responses:
+        '200': { description: Меню, content: { application/json: { schema: { $ref: '#/components/schemas/MenuList' } } } }
+    post:
+      tags: [catalog]
+      summary: Добавить блюдо (владелец)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MenuItemInput' }
+      responses:
+        '201': { description: Добавлено, content: { application/json: { schema: { $ref: '#/components/schemas/MenuItem' } } } }
+  /restaurants/{id}/menu/{itemId}:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+      - { name: itemId, in: path, required: true, schema: { type: string, format: uuid } }
+    patch:
+      tags: [catalog]
+      summary: Изменить блюдо (владелец)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MenuItemPatch' }
+      responses:
+        '200': { description: Обновлено, content: { application/json: { schema: { $ref: '#/components/schemas/MenuItem' } } } }
+    delete:
+      tags: [catalog]
+      summary: Удалить блюдо (владелец)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '204': { description: Удалено }
+  /my/restaurants:
+    get:
+      tags: [catalog]
+      summary: Рестораны текущего пользователя (роль restaurant)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Список, content: { application/json: { schema: { $ref: '#/components/schemas/RestaurantList' } } } }
+
+  /orders:
+    get:
+      tags: [orders]
+      summary: Список заказов (клиент — свои, ресторан — своих ресторанов, админ — все)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: status, in: query, schema: { type: string }, description: 'Статусы через запятую, например paid,accepted' }
+        - { name: restaurant_id, in: query, schema: { type: string, format: uuid } }
+        - { $ref: '#/components/parameters/Limit' }
+        - { $ref: '#/components/parameters/Offset' }
+      responses:
+        '200': { description: Список, content: { application/json: { schema: { $ref: '#/components/schemas/OrderList' } } } }
+    post:
+      tags: [orders]
+      summary: Оформить заказ (роль customer)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          schema: { type: string, maxLength: 100 }
+          description: Повтор запроса с тем же ключом вернёт уже созданный заказ
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateOrderRequest' }
+      responses:
+        '201': { description: Заказ создан (статус created — ожидает оплаты), content: { application/json: { schema: { $ref: '#/components/schemas/Order' } } } }
+        '400': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+  /orders/{id}:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    get:
+      tags: [orders]
+      summary: Заказ с данными об оплате и доставке (композиция ответов трёх сервисов)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Заказ, content: { application/json: { schema: { $ref: '#/components/schemas/OrderDetails' } } } }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+  /orders/{id}/cancel:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    post:
+      tags: [orders]
+      summary: Отменить заказ (клиент, до принятия рестораном)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReasonRequest' }
+      responses:
+        '200': { description: Отменён, content: { application/json: { schema: { $ref: '#/components/schemas/Order' } } } }
+        '422': { $ref: '#/components/responses/Error' }
+  /orders/{id}/accept:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    post:
+      tags: [orders]
+      summary: Принять заказ (ресторан)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Принят, content: { application/json: { schema: { $ref: '#/components/schemas/Order' } } } }
+  /orders/{id}/reject:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    post:
+      tags: [orders]
+      summary: Отклонить заказ (ресторан)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReasonRequest' }
+      responses:
+        '200': { description: Отклонён, content: { application/json: { schema: { $ref: '#/components/schemas/Order' } } } }
+  /orders/{id}/ready:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    post:
+      tags: [orders]
+      summary: Заказ готов (ресторан)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Готов, content: { application/json: { schema: { $ref: '#/components/schemas/Order' } } } }
+
+  /courier/me:
+    get:
+      tags: [courier]
+      summary: Профиль и статус курьера
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Курьер, content: { application/json: { schema: { $ref: '#/components/schemas/Courier' } } } }
+  /courier/status:
+    post:
+      tags: [courier]
+      summary: Выйти на смену / уйти со смены
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [online]
+              properties:
+                online: { type: boolean }
+      responses:
+        '200': { description: Статус изменён, content: { application/json: { schema: { $ref: '#/components/schemas/Courier' } } } }
+  /courier/deliveries:
+    get:
+      tags: [courier]
+      summary: Доставки курьера
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: active, in: query, schema: { type: boolean } }
+      responses:
+        '200': { description: Список, content: { application/json: { schema: { $ref: '#/components/schemas/DeliveryList' } } } }
+  /courier/deliveries/{id}/pickup:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    post:
+      tags: [courier]
+      summary: Курьер забрал заказ в ресторане
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Обновлено, content: { application/json: { schema: { $ref: '#/components/schemas/Delivery' } } } }
+  /courier/deliveries/{id}/deliver:
+    parameters: [{ $ref: '#/components/parameters/Id' }]
+    post:
+      tags: [courier]
+      summary: Курьер доставил заказ
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Обновлено, content: { application/json: { schema: { $ref: '#/components/schemas/Delivery' } } } }
+
+  /notifications:
+    get:
+      tags: [notifications]
+      summary: Уведомления текущего пользователя
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: unread, in: query, schema: { type: boolean } }
+        - { $ref: '#/components/parameters/Limit' }
+      responses:
+        '200': { description: Список, content: { application/json: { schema: { $ref: '#/components/schemas/NotificationList' } } } }
+  /notifications/read:
+    post:
+      tags: [notifications]
+      summary: Отметить уведомления прочитанными
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                ids: { type: array, items: { type: string, format: uuid } }
+                all: { type: boolean }
+      responses:
+        '200':
+          description: Количество обновлённых
+          content: { application/json: { schema: { type: object, properties: { updated: { type: integer } } } } }
+  /notifications/stream:
+    get:
+      tags: [notifications]
+      summary: Поток уведомлений в реальном времени (Server-Sent Events)
+      description: |
+        Браузерный EventSource не умеет передавать заголовки, поэтому токен
+        передаётся параметром `access_token`. События: `ready`, `notification`
+        (data — JSON уведомления).
+      parameters:
+        - { name: access_token, in: query, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Поток text/event-stream }
+
+  /admin/stats:
+    get:
+      tags: [admin]
+      summary: Сводная статистика (композиция Order + Delivery + Restaurant + Auth)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Статистика, content: { application/json: { schema: { $ref: '#/components/schemas/Stats' } } } }
+  /admin/users:
+    get:
+      tags: [admin]
+      summary: Пользователи
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: role, in: query, schema: { $ref: '#/components/schemas/Role' } }
+        - { $ref: '#/components/parameters/Limit' }
+        - { $ref: '#/components/parameters/Offset' }
+      responses:
+        '200': { description: Список, content: { application/json: { schema: { $ref: '#/components/schemas/UserList' } } } }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+  parameters:
+    Id: { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    Limit: { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+    Offset: { name: offset, in: query, schema: { type: integer, minimum: 0, default: 0 } }
+  responses:
+    Error:
+      description: Ошибка
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code: { type: string, example: not_found }
+            message: { type: string, example: заказ не найден }
+        request_id: { type: string }
+    Role:
+      type: string
+      enum: [customer, restaurant, courier, admin]
+    User:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string }
+        name: { type: string }
+        phone: { type: string }
+        role: { $ref: '#/components/schemas/Role' }
+        created_at: { type: string, format: date-time }
+    UserList:
+      type: object
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/User' } }
+        total: { type: integer }
+    RegisterRequest:
+      type: object
+      required: [email, password, name, role]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string, minLength: 8 }
+        name: { type: string }
+        phone: { type: string }
+        role: { type: string, enum: [customer, restaurant, courier] }
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string }
+        password: { type: string }
+    AuthResponse:
+      type: object
+      properties:
+        token: { type: string }
+        expires_at: { type: string, format: date-time }
+        user: { $ref: '#/components/schemas/User' }
+    Restaurant:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        owner_id: { type: string, format: uuid }
+        name: { type: string }
+        description: { type: string }
+        address: { type: string }
+        cuisine: { type: string }
+        is_active: { type: boolean }
+        created_at: { type: string, format: date-time }
+    RestaurantList:
+      type: object
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Restaurant' } }
+        total: { type: integer }
+    RestaurantInput:
+      type: object
+      required: [name, address]
+      properties:
+        name: { type: string }
+        description: { type: string }
+        address: { type: string }
+        cuisine: { type: string }
+    RestaurantPatch:
+      type: object
+      properties:
+        name: { type: string }
+        description: { type: string }
+        address: { type: string }
+        cuisine: { type: string }
+        is_active: { type: boolean }
+    MenuItem:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        restaurant_id: { type: string, format: uuid }
+        name: { type: string }
+        description: { type: string }
+        category: { type: string }
+        price: { type: integer, description: Цена в копейках }
+        is_available: { type: boolean }
+        created_at: { type: string, format: date-time }
+    MenuList:
+      type: object
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/MenuItem' } }
+        total: { type: integer }
+    MenuItemInput:
+      type: object
+      required: [name, price]
+      properties:
+        name: { type: string }
+        description: { type: string }
+        category: { type: string }
+        price: { type: integer, minimum: 1 }
+    MenuItemPatch:
+      type: object
+      properties:
+        name: { type: string }
+        description: { type: string }
+        category: { type: string }
+        price: { type: integer, minimum: 1 }
+        is_available: { type: boolean }
+    OrderStatus:
+      type: string
+      enum: [created, paid, accepted, ready, in_delivery, delivered, cancelled]
+    CreateOrderRequest:
+      type: object
+      required: [restaurant_id, items, delivery_address]
+      properties:
+        restaurant_id: { type: string, format: uuid }
+        items:
+          type: array
+          items:
+            type: object
+            required: [menu_item_id, quantity]
+            properties:
+              menu_item_id: { type: string, format: uuid }
+              quantity: { type: integer, minimum: 1, maximum: 50 }
+        delivery_address: { type: string }
+        comment: { type: string }
+    ReasonRequest:
+      type: object
+      properties:
+        reason: { type: string }
+    Order:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        number: { type: string, description: Короткий номер заказа, example: 3F2A9C1B }
+        customer_id: { type: string, format: uuid }
+        restaurant_id: { type: string, format: uuid }
+        restaurant_name: { type: string }
+        restaurant_address: { type: string }
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              menu_item_id: { type: string, format: uuid }
+              name: { type: string }
+              price: { type: integer }
+              quantity: { type: integer }
+              total: { type: integer }
+        items_total: { type: integer }
+        delivery_fee: { type: integer }
+        total: { type: integer }
+        status: { $ref: '#/components/schemas/OrderStatus' }
+        delivery_address: { type: string }
+        comment: { type: string }
+        courier_id: { type: string }
+        courier_name: { type: string }
+        cancel_reason: { type: string }
+        history:
+          type: array
+          items:
+            type: object
+            properties:
+              status: { $ref: '#/components/schemas/OrderStatus' }
+              reason: { type: string }
+              at: { type: string, format: date-time }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    OrderDetails:
+      allOf:
+        - $ref: '#/components/schemas/Order'
+        - type: object
+          properties:
+            payment:
+              nullable: true
+              allOf: [{ $ref: '#/components/schemas/Payment' }]
+            delivery:
+              nullable: true
+              allOf: [{ $ref: '#/components/schemas/Delivery' }]
+    OrderList:
+      type: object
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Order' } }
+        total: { type: integer }
+    Payment:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        order_id: { type: string, format: uuid }
+        amount: { type: integer }
+        status: { type: string, enum: [pending, succeeded, failed, refunded] }
+        failure_reason: { type: string }
+        provider_ref: { type: string }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    Courier:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        status: { type: string, enum: [offline, available, busy] }
+        completed_deliveries: { type: integer }
+        status_changed_at: { type: string, format: date-time }
+    Delivery:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        order_id: { type: string, format: uuid }
+        order_number: { type: string }
+        courier_id: { type: string }
+        courier_name: { type: string }
+        status: { type: string, enum: [pending, assigned, picked_up, delivered, cancelled] }
+        restaurant_name: { type: string }
+        restaurant_address: { type: string }
+        delivery_address: { type: string }
+        order_total: { type: integer }
+        order_ready: { type: boolean }
+        created_at: { type: string, format: date-time }
+        assigned_at: { type: string, format: date-time, nullable: true }
+        picked_up_at: { type: string, format: date-time, nullable: true }
+        delivered_at: { type: string, format: date-time, nullable: true }
+    DeliveryList:
+      type: object
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Delivery' } }
+        total: { type: integer }
+    Notification:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        type: { type: string, example: order.accepted }
+        title: { type: string }
+        body: { type: string }
+        order_id: { type: string }
+        read: { type: boolean }
+        created_at: { type: string, format: date-time }
+    NotificationList:
+      type: object
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Notification' } }
+        total: { type: integer }
+        unread: { type: integer }
+    Stats:
+      type: object
+      properties:
+        orders:
+          type: object
+          properties:
+            total: { type: integer }
+            today: { type: integer }
+            revenue: { type: integer }
+            average_check: { type: integer }
+            by_status: { type: object, additionalProperties: { type: integer } }
+        delivery:
+          type: object
+          properties:
+            couriers_online: { type: integer }
+            couriers_busy: { type: integer }
+            deliveries_pending: { type: integer }
+            deliveries_active: { type: integer }
+            deliveries_completed: { type: integer }
+        restaurants: { type: integer }
+        users: { type: integer }
